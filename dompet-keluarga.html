@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>🏡 Dompet Keluarga – Fauzan & Venska</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/recharts@2.8.0/umd/Recharts.js"></script>
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;overflow:hidden;background:#FAF7F2}
+  body{font-family:'Plus Jakarta Sans',sans-serif;color:#2D2A26}
+  #root{height:100vh;display:flex;flex-direction:column;max-width:500px;margin:0 auto;overflow:hidden}
+  ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:#C8865C44;border-radius:99px}
+  @keyframes slideUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  @keyframes pop{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+  .su{animation:slideUp .28s cubic-bezier(.16,1,.3,1) both}
+  .fi{animation:fadeIn .22s ease both}
+  input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  input[type=number]{-moz-appearance:textfield}
+  input:focus,textarea:focus{outline:none}
+  button{cursor:pointer;border:none;background:none;font-family:inherit}
+  /* Batik-inspired subtle bg */
+  .bg-pattern::before{
+    content:'';position:absolute;inset:0;
+    background-image:radial-gradient(circle at 20% 50%,rgba(200,134,92,.07) 0,transparent 50%),
+      radial-gradient(circle at 80% 20%,rgba(76,175,130,.05) 0,transparent 50%);
+    pointer-events:none
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useCallback,useRef}=React;
+const {PieChart,Pie,Cell,BarChart,Bar,XAxis,YAxis,Tooltip,ResponsiveContainer,Legend}=Recharts;
+
+/* ═══════════ CONSTANTS ═══════════ */
+const IC=[
+  {id:'gaji',    label:'Gaji',        icon:'💼',color:'#4CAF82'},
+  {id:'freelance',label:'Freelance',  icon:'💻',color:'#5B9BD5'},
+  {id:'hadiah',  label:'Hadiah/THR',  icon:'🎁',color:'#F5A623'},
+  {id:'investasi',label:'Investasi',  icon:'📈',color:'#9B59B6'},
+  {id:'lain_in', label:'Lainnya',     icon:'✨',color:'#7F8C8D'},
+];
+const EC=[
+  {id:'makan',   label:'Makan & Minum',icon:'🍽️',color:'#E8705A'},
+  {id:'transport',label:'Transportasi',icon:'🚗',color:'#E67E22'},
+  {id:'belanja', label:'Belanja',      icon:'🛒',color:'#8E44AD'},
+  {id:'tagihan', label:'Tagihan',      icon:'📱',color:'#2980B9'},
+  {id:'kesehatan',label:'Kesehatan',  icon:'🏥',color:'#16A085'},
+  {id:'pendidikan',label:'Pendidikan',icon:'📚',color:'#27AE60'},
+  {id:'sikecil', label:'Si Kecil 🍼', icon:'🍼',color:'#F1A8C7'},
+  {id:'hiburan', label:'Hiburan',     icon:'🎮',color:'#E74C3C'},
+  {id:'perawatan',label:'Perawatan',  icon:'💆',color:'#1ABC9C'},
+  {id:'lain_ex', label:'Lainnya',     icon:'📦',color:'#7F8C8D'},
+];
+const MID=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+const MS=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'];
+
+/* ═══════════ HELPERS ═══════════ */
+const fRp=(n,s=false)=>{
+  const a=Math.abs(n);
+  if(s&&a>=1e6)return'Rp '+(a/1e6).toFixed(1)+'jt';
+  if(s&&a>=1e3)return'Rp '+(a/1e3).toFixed(0)+'rb';
+  return'Rp '+a.toLocaleString('id-ID');
+};
+const gCat=(type,id)=>{
+  const cats=type==='income'?IC:EC;
+  return cats.find(c=>c.id===id)||cats[cats.length-1];
+};
+const mKey=d=>{const x=new Date(d);return`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}`};
+const tod=()=>new Date().toISOString().split('T')[0];
+const gid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+
+/* WA text parser */
+const parseWA=txt=>{
+  const lines=txt.trim().split('\n').filter(l=>l.trim());
+  const res=[];
+  for(const line of lines){
+    const cl=line.trim().toLowerCase();
+    const nm=cl.match(/[\d.,]+/);
+    if(!nm)continue;
+    const amt=parseInt(nm[0].replace(/[.,]/g,''));
+    if(!amt||amt<=0)continue;
+    const tn=cl.replace(/[\d.,]+/,'').trim();
+    let type='expense',catId='lain_ex';
+    if(/gaji|salary|upah/.test(tn)){type='income';catId='gaji';}
+    else if(/freelance|project|proyek|klien/.test(tn)){type='income';catId='freelance';}
+    else if(/thr|hadiah|bonus|transfer masuk|terima/.test(tn)){type='income';catId='hadiah';}
+    else if(/dividen|saham|bunga|investasi/.test(tn)){type='income';catId='investasi';}
+    else if(/makan|minum|lauk|sayur|warung|restoran|cafe|kopi|nasi|soto|bakso|ayam|ikan/.test(tn)){catId='makan';}
+    else if(/ojek|grab|gojek|bensin|parkir|tol|krl|busway|angkot|motor/.test(tn)){catId='transport';}
+    else if(/belanja|beli|shopee|tokopedia|lazada|supermarket|indomaret|alfamart/.test(tn)){catId='belanja';}
+    else if(/listrik|pln|air|pdam|wifi|internet|pulsa|token|tagihan/.test(tn)){catId='tagihan';}
+    else if(/dokter|obat|apotek|rs|klinik|bidan|vitamin/.test(tn)){catId='kesehatan';}
+    else if(/sekolah|kursus|les|buku|pendidikan/.test(tn)){catId='pendidikan';}
+    else if(/bayi|susu|popok|pampers|shafiyyah|athiyyah|si kecil/.test(tn)){catId='sikecil';}
+    else if(/nonton|bioskop|game|streaming|netflix|spotify/.test(tn)){catId='hiburan';}
+    else if(/salon|potong|perawatan|skincare|makeup/.test(tn)){catId='perawatan';}
+    res.push({type,catId,amount:amt,note:line.trim(),date:tod()});
+  }
+  return res;
+};
+
+const SK='fv_dompet_v2';
+const load=()=>{try{const r=localStorage.getItem(SK);return r?JSON.parse(r):[]}catch{return[]}};
+const save=tx=>{try{localStorage.setItem(SK,JSON.stringify(tx))}catch(e){}};
+
+/* ═══════════ HEADER ═══════════ */
+function Header({sel,onPrev,onNext}){
+  const[y,m]=sel.split('-').map(Number);
+  return(
+    <div style={{background:'linear-gradient(135deg,#2D2A26 0%,#3D3830 100%)',padding:'14px 20px 12px',position:'relative',overflow:'hidden',flexShrink:0}}>
+      <div style={{position:'absolute',top:-24,right:-24,width:90,height:90,borderRadius:'50%',background:'rgba(200,134,92,.12)'}}/>
+      <div style={{position:'absolute',top:16,right:34,width:45,height:45,borderRadius:'50%',background:'rgba(200,134,92,.08)'}}/>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',position:'relative'}}>
+        <div>
+          <div style={{fontFamily:"'Playfair Display',serif",color:'#C8865C',fontSize:19,fontWeight:700,letterSpacing:'.3px'}}>
+            🏡 Dompet Keluarga
+          </div>
+          <div style={{color:'rgba(255,255,255,.45)',fontSize:11,marginTop:1}}>Fauzan &amp; Venska • {new Date().getFullYear()}</div>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:6}}>
+          <button onClick={onPrev} style={{color:'rgba(255,255,255,.45)',fontSize:20,padding:'4px 8px',lineHeight:1}}>‹</button>
+          <span style={{color:'#fff',fontSize:13,fontWeight:600,minWidth:88,textAlign:'center'}}>{MID[m-1]} {y}</span>
+          <button onClick={onNext} style={{color:'rgba(255,255,255,.45)',fontSize:20,padding:'4px 8px',lineHeight:1}}>›</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ SUMMARY ═══════════ */
+function Summary({inc,exp}){
+  const bal=inc-exp;
+  return(
+    <div style={{padding:'14px 14px 0'}}>
+      <div className="su" style={{
+        background:'linear-gradient(135deg,#C8865C 0%,#E8A47C 100%)',
+        borderRadius:22,padding:'18px 22px',marginBottom:10,
+        boxShadow:'0 8px 28px rgba(200,134,92,.38)',position:'relative',overflow:'hidden',
+      }}>
+        <div style={{position:'absolute',bottom:-18,right:-18,width:88,height:88,borderRadius:'50%',background:'rgba(255,255,255,.1)'}}/>
+        <div style={{position:'absolute',bottom:14,right:34,width:44,height:44,borderRadius:'50%',background:'rgba(255,255,255,.07)'}}/>
+        <div style={{color:'rgba(255,255,255,.82)',fontSize:12,marginBottom:4}}>Saldo Bulan Ini</div>
+        <div style={{fontFamily:"'Playfair Display',serif",color:'#fff',fontSize:30,fontWeight:700,letterSpacing:'-.5px',position:'relative'}}>
+          {bal<0?'-':''}{fRp(bal)}
+        </div>
+        <div style={{marginTop:12,display:'flex',gap:22,position:'relative'}}>
+          <div><div style={{color:'rgba(255,255,255,.7)',fontSize:11}}>▲ Masuk</div><div style={{color:'#fff',fontSize:14,fontWeight:700}}>{fRp(inc,true)}</div></div>
+          <div><div style={{color:'rgba(255,255,255,.7)',fontSize:11}}>▼ Keluar</div><div style={{color:'#fff',fontSize:14,fontWeight:700}}>{fRp(exp,true)}</div></div>
+        </div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        {[['💚','Pemasukan',inc,'#4CAF82'],['🧡','Pengeluaran',exp,'#E8705A']].map(([em,lb,val,cl],i)=>(
+          <div key={i} className="su" style={{background:'#fff',borderRadius:18,padding:'14px 16px',boxShadow:'0 2px 14px rgba(0,0,0,.055)',borderLeft:`4px solid ${cl}`,animationDelay:`${i*.07}s`}}>
+            <div style={{fontSize:21}}>{em}</div>
+            <div style={{color:'#999',fontSize:11,marginTop:5}}>{lb}</div>
+            <div style={{color:cl,fontWeight:700,fontSize:16,marginTop:2}}>{fRp(val,true)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ TX ITEM ═══════════ */
+function TxItem({tx,onDelete}){
+  const cat=gCat(tx.type,tx.catId);
+  const d=new Date(tx.date);
+  return(
+    <div style={{display:'flex',alignItems:'center',padding:'11px 0',borderBottom:'1px solid #F0EDE8'}}>
+      <div style={{width:42,height:42,borderRadius:14,background:cat.color+'22',display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>{cat.icon}</div>
+      <div style={{flex:1,marginLeft:11}}>
+        <div style={{fontSize:14,fontWeight:600,color:'#2D2A26',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:180}}>{tx.note||cat.label}</div>
+        <div style={{fontSize:11,color:'#BBB',marginTop:2}}>{cat.label} · {d.getDate()} {MS[d.getMonth()]}</div>
+      </div>
+      <div style={{textAlign:'right',flexShrink:0}}>
+        <div style={{fontWeight:700,fontSize:15,color:tx.type==='income'?'#4CAF82':'#E8705A'}}>
+          {tx.type==='income'?'+':'-'}{fRp(tx.amount,true)}
+        </div>
+        {onDelete&&<button onClick={()=>onDelete(tx.id)} style={{fontSize:11,color:'#DDD',marginTop:3,padding:'2px 6px',borderRadius:6}}>hapus</button>}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ HOME ═══════════ */
+function HomePage({transactions,sel,onAdd}){
+  const mtx=useMemo(()=>transactions.filter(t=>mKey(t.date)===sel).sort((a,b)=>new Date(b.date)-new Date(a.date)),[transactions,sel]);
+  const inc=useMemo(()=>mtx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0),[mtx]);
+  const exp=useMemo(()=>mtx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0),[mtx]);
+  return(
+    <div style={{flex:1,overflowY:'auto',paddingBottom:72}}>
+      <Summary inc={inc} exp={exp}/>
+      <div style={{padding:'16px 14px 0'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:16,fontWeight:700,color:'#2D2A26'}}>Transaksi Terbaru</div>
+          {mtx.length>0&&<span style={{fontSize:12,color:'#BBA'}}>{mtx.length} transaksi</span>}
+        </div>
+        {mtx.length===0?(
+          <div style={{textAlign:'center',padding:'36px 0',color:'#CCC'}}>
+            <div style={{fontSize:52}}>🌸</div>
+            <div style={{marginTop:12,fontSize:14,color:'#C8A880'}}>Belum ada transaksi bulan ini</div>
+            <button onClick={onAdd} style={{marginTop:16,padding:'11px 28px',borderRadius:99,background:'linear-gradient(135deg,#C8865C,#E8A47C)',color:'#fff',fontSize:14,fontWeight:700,boxShadow:'0 6px 18px rgba(200,134,92,.3)'}}>+ Tambah Sekarang</button>
+          </div>
+        ):mtx.slice(0,10).map(tx=><TxItem key={tx.id} tx={tx}/>)}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ ADD PAGE ═══════════ */
+function AddPage({onSave}){
+  const [type,setType]=useState('expense');
+  const [amount,setAmount]=useState('');
+  const [catId,setCatId]=useState('makan');
+  const [note,setNote]=useState('');
+  const [date,setDate]=useState(tod);
+  const [showWA,setShowWA]=useState(false);
+  const [waText,setWaText]=useState('');
+  const [parsed,setParsed]=useState([]);
+  const [toast,setToast]=useState('');
+  const cats=type==='income'?IC:EC;
+  useEffect(()=>setCatId(type==='income'?'gaji':'makan'),[type]);
+  const showToast=msg=>{setToast(msg);setTimeout(()=>setToast(''),2200)};
+  const handleSave=()=>{
+    const a=parseInt(amount.replace(/[^0-9]/g,''));
+    if(!a||a<=0)return showToast('⚠️ Masukkan jumlah!');
+    onSave({id:gid(),type,amount:a,catId,note,date,createdAt:Date.now()});
+    setAmount('');setNote('');
+    showToast('✅ Tersimpan!');
+  };
+  const handleSaveAll=()=>{
+    parsed.forEach(p=>onSave({id:gid(),...p,createdAt:Date.now()}));
+    setWaText('');setParsed([]);
+    showToast(`✅ ${parsed.length} transaksi tersimpan!`);
+  };
+  const inp={width:'100%',padding:'13px 16px',borderRadius:14,border:'2px solid #F0EDE8',fontSize:14,color:'#2D2A26',background:'#fff',fontFamily:'inherit',transition:'border-color .2s'};
+  return(
+    <div style={{flex:1,overflowY:'auto',paddingBottom:72,padding:'14px 14px 72px'}}>
+      {toast&&<div className="fi" style={{background:toast.startsWith('✅')?'#4CAF82':'#E8705A',color:'#fff',borderRadius:12,padding:'12px 16px',marginBottom:14,textAlign:'center',fontWeight:600,fontSize:14,position:'sticky',top:0,zIndex:10}}>{toast}</div>}
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700,color:'#2D2A26',marginBottom:18}}>Catat Transaksi</div>
+      
+      {/* Type toggle */}
+      <div style={{display:'flex',background:'#F0EDE8',borderRadius:14,padding:4,marginBottom:18}}>
+        {[['expense','🔴 Pengeluaran'],['income','🟢 Pemasukan']].map(([t,l])=>(
+          <button key={t} onClick={()=>setType(t)} style={{flex:1,padding:'10px',borderRadius:10,fontSize:13,fontWeight:600,background:type===t?(t==='income'?'#4CAF82':'#E8705A'):'transparent',color:type===t?'#fff':'#999',transition:'all .2s'}}>{l}</button>
+        ))}
+      </div>
+      
+      {/* Amount */}
+      <div style={{marginBottom:14}}>
+        <label style={{fontSize:11,color:'#999',fontWeight:700,marginBottom:6,display:'block',letterSpacing:'.5px'}}>JUMLAH (Rp)</label>
+        <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0"
+          style={{...inp,fontSize:26,fontWeight:700}}
+          onFocus={e=>e.target.style.borderColor='#C8865C'} onBlur={e=>e.target.style.borderColor='#F0EDE8'}/>
+      </div>
+      
+      {/* Category */}
+      <div style={{marginBottom:14}}>
+        <label style={{fontSize:11,color:'#999',fontWeight:700,marginBottom:8,display:'block',letterSpacing:'.5px'}}>KATEGORI</label>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>
+          {cats.map(cat=>(
+            <button key={cat.id} onClick={()=>setCatId(cat.id)} style={{padding:'9px 4px',borderRadius:12,textAlign:'center',background:catId===cat.id?cat.color+'22':'#F8F5F1',border:`2px solid ${catId===cat.id?cat.color:'transparent'}`,transition:'all .15s'}}>
+              <div style={{fontSize:19}}>{cat.icon}</div>
+              <div style={{fontSize:10,fontWeight:600,color:catId===cat.id?cat.color:'#AAA',marginTop:2,lineHeight:1.2}}>{cat.label}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      
+      {/* Note */}
+      <div style={{marginBottom:14}}>
+        <label style={{fontSize:11,color:'#999',fontWeight:700,marginBottom:6,display:'block',letterSpacing:'.5px'}}>CATATAN</label>
+        <input type="text" value={note} onChange={e=>setNote(e.target.value)} placeholder="Misal: makan siang di warung..."
+          style={inp} onFocus={e=>e.target.style.borderColor='#C8865C'} onBlur={e=>e.target.style.borderColor='#F0EDE8'}/>
+      </div>
+      
+      {/* Date */}
+      <div style={{marginBottom:20}}>
+        <label style={{fontSize:11,color:'#999',fontWeight:700,marginBottom:6,display:'block',letterSpacing:'.5px'}}>TANGGAL</label>
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+      </div>
+      
+      {/* Save */}
+      <button onClick={handleSave} style={{width:'100%',padding:'16px',borderRadius:16,background:'linear-gradient(135deg,#C8865C 0%,#E8A47C 100%)',color:'#fff',fontSize:16,fontWeight:700,boxShadow:'0 8px 22px rgba(200,134,92,.35)',transition:'transform .1s,box-shadow .1s'}}
+        onMouseDown={e=>{e.currentTarget.style.transform='scale(.97)';e.currentTarget.style.boxShadow='0 4px 12px rgba(200,134,92,.25)'}}
+        onMouseUp={e=>{e.currentTarget.style.transform='scale(1)';e.currentTarget.style.boxShadow='0 8px 22px rgba(200,134,92,.35)'}}>
+        💾 Simpan Transaksi
+      </button>
+      
+      {/* WA Quick Input */}
+      <div style={{marginTop:22}}>
+        <button onClick={()=>setShowWA(!showWA)} style={{width:'100%',padding:'13px',borderRadius:16,border:'2px dashed #25D366',color:'#128C7E',fontSize:14,fontWeight:600,background:showWA?'#25D36611':'transparent',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+          <span style={{fontSize:18}}>📱</span> Input Cepat dari WhatsApp
+        </button>
+        {showWA&&(
+          <div className="su" style={{marginTop:10,background:'#fff',borderRadius:18,padding:16,border:'1px solid #F0EDE8'}}>
+            <div style={{fontSize:12,color:'#888',marginBottom:10,lineHeight:1.6,background:'#FFF8F0',borderRadius:10,padding:'10px 12px'}}>
+              <b>💡 Cara pakai:</b> Copy teks dari chat WA lalu paste di sini.<br/>
+              Format: <span style={{color:'#C8865C',fontWeight:600}}>keterangan jumlah</span><br/>
+              Contoh: <i>makan siang 35000</i> · <i>gaji 6500000</i> · <i>bensin 50000</i> · <i>susu bayi 120000</i>
+            </div>
+            <textarea value={waText} onChange={e=>setWaText(e.target.value)} placeholder="Paste teks dari WA di sini, tiap baris = 1 transaksi..." rows={4}
+              style={{width:'100%',padding:'11px',borderRadius:12,border:'1.5px solid #F0EDE8',fontSize:13,resize:'vertical',fontFamily:'inherit',color:'#2D2A26'}}/>
+            <button onClick={()=>setParsed(parseWA(waText))} style={{marginTop:8,padding:'10px 16px',borderRadius:10,background:'#25D36622',color:'#128C7E',fontWeight:600,fontSize:13}}>🔍 Analisa Teks</button>
+            {parsed.length>0&&(
+              <div style={{marginTop:12}}>
+                <div style={{fontSize:12,color:'#888',marginBottom:8}}>Hasil parse — {parsed.length} transaksi:</div>
+                {parsed.map((p,i)=>{
+                  const cat=gCat(p.type,p.catId);
+                  return(
+                    <div key={i} style={{display:'flex',alignItems:'center',padding:'8px 10px',background:'#F8F5F1',borderRadius:10,marginBottom:6}}>
+                      <span style={{fontSize:18,marginRight:8}}>{cat.icon}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:12,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:160}}>{p.note}</div>
+                        <div style={{fontSize:11,color:'#AAA'}}>{cat.label} · {p.type==='income'?'Masuk':'Keluar'}</div>
+                      </div>
+                      <div style={{color:p.type==='income'?'#4CAF82':'#E8705A',fontWeight:700,fontSize:13}}>{p.type==='income'?'+':'-'}{fRp(p.amount,true)}</div>
+                    </div>
+                  );
+                })}
+                <button onClick={handleSaveAll} style={{marginTop:8,width:'100%',padding:'13px',borderRadius:12,background:'#25D366',color:'#fff',fontWeight:700,fontSize:14,boxShadow:'0 6px 16px rgba(37,211,102,.3)'}}>
+                  ✅ Simpan Semua ({parsed.length} transaksi)
+                </button>
+              </div>
+            )}
+            {waText&&parsed.length===0&&(
+              <div style={{marginTop:8,fontSize:12,color:'#E8705A',background:'#FFF3F3',borderRadius:10,padding:'8px 12px'}}>Belum bisa diparse. Pastikan ada angka di setiap baris.</div>
+            )}
+          </div>
+        )}
+      </div>
+      
+      {/* Telegram note */}
+      <div style={{marginTop:16,padding:'12px 14px',background:'#F0F8FF',borderRadius:14,border:'1px solid #E0EEFF'}}>
+        <div style={{fontSize:12,color:'#3B82F6',fontWeight:600}}>💡 Tip integrasi bot</div>
+        <div style={{fontSize:11,color:'#666',marginTop:4,lineHeight:1.6}}>Untuk input otomatis tanpa buka app, sambungkan dengan <b>Telegram Bot</b> (gratis via @BotFather). Lebih mudah daripada WA API yang berbayar.</div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════ CHART PAGE ═══════════ */
+function ChartPage({transactions,sel}){
+  const [view,setView]=useState('cat');
+  const mtx=useMemo(()=>transactions.filter(t=>mKey(t.date)===sel),[transactions,sel]);
+  
+  const pieExp=useMemo(()=>{
+    const g={};
+    mtx.filter(t=>t.type==='expense').forEach(t=>{
+      const c=gCat('expense',t.catId);
+      if(!g[t.catId])g[t.catId]={name:c.label,value:0,color:c.color,icon:c.icon};
+      g[t.catId].value+=t.amount;
+    });
+    return Object.values(g).sort((a,b)=>b.value-a.value);
+  },[mtx]);
+  
+  const pieInc=useMemo(()=>{
+    const g={};
+    mtx.filter(t=>t.type==='income').forEach(t=>{
+      const c=gCat('income',t.catId);
+      if(!g[t.catId])g[t.catId]={name:c.label,value:0,color:c.color,icon:c.icon};
+      g[t.catId].value+=t.amount;
+    });
+    return Object.values(g);
+  },[mtx]);
+  
+  const barData=useMemo(()=>{
+    const now=new Date();
+    return Array.from({length:6},(_,i)=>{
+      const d=new Date(now.getFullYear(),now.getMonth()-5+i,1);
+      const k=mKey(d);
+      const txs=transactions.filter(t=>mKey(t.date)===k);
+      return{name:MS[d.getMonth()],Masuk:Math.round(txs.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0)/1000),Keluar:Math.round(txs.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0)/1000)};
+    });
+  },[transactions]);
+  
+  const CT=({active,payload})=>{
+    if(!active||!payload?.length)return null;
+    return<div style={{background:'#fff',padding:'8px 12px',borderRadius:10,boxShadow:'0 4px 16px rgba(0,0,0,.1)',fontSize:12}}>
+      {payload.map((p,i)=><div key={i} style={{color:p.color,fontWeight:600}}>{p.name}: Rp {(p.value*1000).toLocaleString('id-ID')}</div>)}
+    </div>;
+  };
+  
+  const EmptyChart=()=><div style={{textAlign:'center',padding:'24px 0',color:'#DDD',fontSize:13}}><div style={{fontSize:36}}>📊</div><div style={{marginTop:8}}>Belum ada data bulan ini</div></div>;
+  
+  return(
+    <div style={{flex:1,overflowY:'auto',paddingBottom:72,padding:'14px'}}>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700,color:'#2D2A26',marginBottom:16}}>Grafik Keuangan</div>
+      
+      <div style={{display:'flex',background:'#F0EDE8',borderRadius:14,padding:4,marginBottom:18}}>
+        {[['cat','Per Kategori'],['monthly','6 Bulan']].map(([k,l])=>(
+          <button key={k} onClick={()=>setView(k)} style={{flex:1,padding:'10px',borderRadius:10,fontSize:13,fontWeight:600,background:view===k?'#fff':'transparent',color:view===k?'#C8865C':'#999',boxShadow:view===k?'0 2px 10px rgba(0,0,0,.08)':'none',transition:'all .2s'}}>{l}</button>
+        ))}
+      </div>
+      
+      {view==='cat'?(
+        <div>
+          {/* Expense pie */}
+          <div className="su" style={{background:'#fff',borderRadius:22,padding:16,marginBottom:12,boxShadow:'0 2px 14px rgba(0,0,0,.06)'}}>
+            <div style={{fontSize:14,fontWeight:700,color:'#E8705A',marginBottom:12}}>🔴 Pengeluaran per Kategori</div>
+            {pieExp.length===0?<EmptyChart/>:(
+              <>
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart><Pie data={pieExp} dataKey="value" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3}>
+                    {pieExp.map((e,i)=><Cell key={i} fill={e.color}/>)}
+                  </Pie><Tooltip formatter={v=>fRp(v)}/></PieChart>
+                </ResponsiveContainer>
+                <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:4}}>
+                  {pieExp.map((d,i)=>{
+                    const tot=pieExp.reduce((s,x)=>s+x.value,0);
+                    return<div key={i} style={{display:'flex',alignItems:'center',gap:8}}>
+                      <div style={{width:10,height:10,borderRadius:'50%',background:d.color,flexShrink:0}}/>
+                      <div style={{flex:1,fontSize:13}}>{d.icon} {d.name}</div>
+                      <div style={{fontSize:13,fontWeight:600}}>{fRp(d.value,true)}</div>
+                      <div style={{fontSize:11,color:'#AAA',width:34,textAlign:'right'}}>{Math.round(d.value/tot*100)}%</div>
+                    </div>
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+          {/* Income pie */}
+          <div className="su" style={{background:'#fff',borderRadius:22,padding:16,boxShadow:'0 2px 14px rgba(0,0,0,.06)',animationDelay:'.06s'}}>
+            <div style={{fontSize:14,fontWeight:700,color:'#4CAF82',marginBottom:12}}>🟢 Pemasukan per Kategori</div>
+            {pieInc.length===0?<EmptyChart/>:(
+              <>
+                <ResponsiveContainer width="100%" height={160}>
+                  <PieChart><Pie data={pieInc} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={68} paddingAngle={3}>
+                    {pieInc.map((e,i)=><Cell key={i} fill={e.color}/>)}
+                  </Pie><Tooltip formatter={v=>fRp(v)}/></PieChart>
+                </ResponsiveContainer>
+                <div style={{display:'flex',flexDirection:'column',gap:8,marginTop:4}}>
+                  {pieInc.map((d,i)=><div key={i} style={{display:'flex',alignItems:'center',gap:8}}>
+                    <div style={{width:10,height:10,borderRadius:'50%',background:d.color,flexShrink:0}}/>
+                    <div style={{flex:1,fontSize:13}}>{d.icon} {d.name}</div>
+                    <div style={{fontSize:13,fontWeight:600}}>{fRp(d.value,true)}</div>
+                  </div>)}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ):(
+        <div className="su" style={{background:'#fff',borderRadius:22,padding:16,boxShadow:'0 2px 14px rgba(0,0,0,.06)'}}>
+          <div style={{fontSize:14,fontWeight:700,color:'#2D2A26',marginBottom:4}}>Tren 6 Bulan Terakhir</div>
+          <div style={{fontSize:11,color:'#AAA',marginBottom:14}}>Satuan: ribuan (rb)</div>
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={barData} barGap={4} barCategoryGap="30%">
+              <XAxis dataKey="name" tick={{fontSize:12}} axisLine={false} tickLine={false}/>
+              <YAxis tick={{fontSize:11}} axisLine={false} tickLine={false} width={38}/>
+              <Tooltip content={<CT/>}/>
+              <Legend wrapperStyle={{fontSize:12,marginTop:8}}/>
+              <Bar dataKey="Masuk" fill="#4CAF82" radius={[6,6,0,0]}/>
+              <Bar dataKey="Keluar" fill="#E8705A" radius={[6,6,0,0]}/>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════ HISTORY ═══════════ */
+function HistoryPage({transactions,onDelete}){
+  const [filter,setFilter]=useState('all');
+  const [search,setSearch]=useState('');
+  
+  const filtered=useMemo(()=>
+    transactions
+      .filter(t=>filter==='all'||t.type===filter)
+      .filter(t=>!search||t.note?.toLowerCase().includes(search)||gCat(t.type,t.catId).label.toLowerCase().includes(search))
+      .sort((a,b)=>new Date(b.date)-new Date(a.date))
+  ,[transactions,filter,search]);
+  
+  const grouped=useMemo(()=>{
+    const g={};
+    filtered.forEach(t=>{const k=mKey(t.date);if(!g[k])g[k]=[];g[k].push(t)});
+    return Object.entries(g).sort(([a],[b])=>b.localeCompare(a));
+  },[filtered]);
+  
+  return(
+    <div style={{flex:1,overflowY:'auto',paddingBottom:72,padding:'14px'}}>
+      <div style={{fontFamily:"'Playfair Display',serif",fontSize:20,fontWeight:700,color:'#2D2A26',marginBottom:14}}>Riwayat Transaksi</div>
+      <input type="text" value={search} onChange={e=>setSearch(e.target.value.toLowerCase())} placeholder="🔍 Cari transaksi..."
+        style={{width:'100%',padding:'12px 16px',borderRadius:14,border:'2px solid #F0EDE8',fontSize:14,marginBottom:12,background:'#fff',color:'#2D2A26',fontFamily:'inherit'}}
+        onFocus={e=>e.target.style.borderColor='#C8865C'} onBlur={e=>e.target.style.borderColor='#F0EDE8'}/>
+      <div style={{display:'flex',gap:8,marginBottom:16}}>
+        {[['all','Semua'],['expense','Keluar'],['income','Masuk']].map(([k,l])=>(
+          <button key={k} onClick={()=>setFilter(k)} style={{padding:'7px 18px',borderRadius:99,fontSize:13,fontWeight:600,background:filter===k?'#C8865C':'#F0EDE8',color:filter===k?'#fff':'#888',transition:'all .2s'}}>{l}</button>
+        ))}
+      </div>
+      {grouped.length===0?(
+        <div style={{textAlign:'center',padding:'40px 0',color:'#CCC'}}>
+          <div style={{fontSize:42}}>📂</div>
+          <div style={{marginTop:12,fontSize:14}}>Tidak ada transaksi</div>
+        </div>
+      ):grouped.map(([k,txs])=>{
+        const [yr,mo]=k.split('-').map(Number);
+        const tot=txs.reduce((s,t)=>s+(t.type==='income'?t.amount:-t.amount),0);
+        return(
+          <div key={k} style={{marginBottom:20}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,paddingBottom:6,borderBottom:'2px solid #F0EDE8'}}>
+              <div style={{fontSize:13,fontWeight:700,color:'#999'}}>{MID[mo-1]} {yr}</div>
+              <div style={{fontSize:13,fontWeight:700,color:tot>=0?'#4CAF82':'#E8705A'}}>{tot>=0?'+':''}{fRp(tot,true)}</div>
+            </div>
+            {txs.map(tx=><TxItem key={tx.id} tx={tx} onDelete={onDelete}/>)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════ TABBAR ═══════════ */
+function TabBar({active,onChange}){
+  const tabs=[{id:'home',icon:'🏠',label:'Beranda'},{id:'add',icon:'➕',label:'Tambah'},{id:'chart',icon:'📊',label:'Grafik'},{id:'history',icon:'📋',label:'Riwayat'}];
+  return(
+    <div style={{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:500,background:'rgba(255,255,255,.96)',backdropFilter:'blur(20px)',borderTop:'1px solid #F0EDE8',display:'flex',zIndex:200,paddingBottom:'env(safe-area-inset-bottom,0px)'}}>
+      {tabs.map(t=>(
+        <button key={t.id} onClick={()=>onChange(t.id)} style={{flex:1,padding:'9px 4px 5px',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+          <div style={{fontSize:t.id==='add'?24:19,transform:active===t.id?'scale(1.12)':'scale(1)',transition:'transform .2s'}}>{t.icon}</div>
+          <div style={{fontSize:10,fontWeight:700,color:active===t.id?'#C8865C':'#CCC',transition:'color .2s'}}>{t.label}</div>
+          {active===t.id&&<div style={{width:4,height:4,borderRadius:'50%',background:'#C8865C'}}/>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════ APP ═══════════ */
+function App(){
+  const [transactions,setTransactions]=useState(()=>load());
+  const [tab,setTab]=useState('home');
+  const [sel,setSel]=useState(()=>mKey(new Date()));
+  
+  useEffect(()=>save(transactions),[transactions]);
+  
+  const handleSave=useCallback(tx=>{setTransactions(p=>[tx,...p]);setTab('home')},[]);
+  const handleDelete=useCallback(id=>{if(!confirm('Hapus transaksi ini?'))return;setTransactions(p=>p.filter(t=>t.id!==id))},[]);
+  const prevM=()=>{const[y,m]=sel.split('-').map(Number);setSel(mKey(new Date(y,m-2,1)))};
+  const nextM=()=>{const[y,m]=sel.split('-').map(Number);setSel(mKey(new Date(y,m,1)))};
+  
+  return(
+    <div style={{height:'100vh',display:'flex',flexDirection:'column',maxWidth:500,margin:'0 auto',background:'#FAF7F2',overflow:'hidden'}}>
+      <Header sel={sel} onPrev={prevM} onNext={nextM}/>
+      <div style={{flex:1,overflow:'hidden',position:'relative',display:'flex',flexDirection:'column'}}>
+        {tab==='home'&&<HomePage transactions={transactions} sel={sel} onAdd={()=>setTab('add')}/>}
+        {tab==='add'&&<AddPage onSave={handleSave}/>}
+        {tab==='chart'&&<ChartPage transactions={transactions} sel={sel}/>}
+        {tab==='history'&&<HistoryPage transactions={transactions} onDelete={handleDelete}/>}
+      </div>
+      <TabBar active={tab} onChange={setTab}/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
